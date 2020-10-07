@@ -1,4 +1,4 @@
-# Gottani - a tool for combining Go source code into a single .go file
+# Gottani - Combine Go source into a single .go file
 
 ## What is Gottani
 

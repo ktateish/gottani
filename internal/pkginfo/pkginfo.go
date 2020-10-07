@@ -220,6 +220,7 @@ func (pi *PackageInfo) getBuildPackage(importPath, dir string) (*build.Package, 
 			if err != nil {
 				return nil, err
 			}
+			bp.ImportPath = importPath
 			pi.pkgs[absKey] = bp
 		}
 	}

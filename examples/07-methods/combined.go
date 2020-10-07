@@ -10,59 +10,59 @@ import (
 // =============================================================================
 
 type (
-//line github.com/ktateish/gottani/examples/07-methods/lib/lib.go:3
+//line example.com/lib/lib.go:3
 	Entries struct {
 		ids   []int
 		names []string
 	}
 
-//line github.com/ktateish/gottani/examples/07-methods/lib/lib.go:32
+//line example.com/lib/lib.go:32
 	SortByNames Entries
 
-//line github.com/ktateish/gottani/examples/07-methods/lib/lib.go:32
+//line example.com/lib/lib.go:32
 )
 
-//line github.com/ktateish/gottani/examples/07-methods/lib/lib.go:8
+//line example.com/lib/lib.go:8
 func (e *Entries) Append(id int, name string) {
 	e.ids = append(e.ids, id)
 	e.names = append(e.names, name)
 }
 
-//line github.com/ktateish/gottani/examples/07-methods/lib/lib.go:13
+//line example.com/lib/lib.go:13
 func (e *Entries) ForEachEntry(f func(id int, name string)) {
 	for i, id := range e.ids {
 		f(id, e.names[i])
 	}
 }
 
-//line github.com/ktateish/gottani/examples/07-methods/lib/lib.go:19
+//line example.com/lib/lib.go:19
 func (e *Entries) Len() int {
 	return len(e.ids)
 }
 
-//line github.com/ktateish/gottani/examples/07-methods/lib/lib.go:23
+//line example.com/lib/lib.go:23
 func (e *Entries) Less(i, j int) bool {
 	return e.ids[i] < e.ids[j]
 }
 
-//line github.com/ktateish/gottani/examples/07-methods/lib/lib.go:27
+//line example.com/lib/lib.go:27
 func (e *Entries) Swap(i, j int) {
 	e.ids[i], e.ids[j] = e.ids[j], e.ids[i]
 	e.names[i], e.names[j] = e.names[j], e.names[i]
 }
 
-//line github.com/ktateish/gottani/examples/07-methods/lib/lib.go:34
+//line example.com/lib/lib.go:34
 func (e *SortByNames) Len() int {
 	ee := (*Entries)(e)
 	return ee.Len()
 }
 
-//line github.com/ktateish/gottani/examples/07-methods/lib/lib.go:39
+//line example.com/lib/lib.go:39
 func (e *SortByNames) Less(i, j int) bool {
 	return e.names[i] < e.names[j]
 }
 
-//line github.com/ktateish/gottani/examples/07-methods/lib/lib.go:43
+//line example.com/lib/lib.go:43
 func (e *SortByNames) Swap(i, j int) {
 	ee := (*Entries)(e)
 	ee.Swap(i, j)

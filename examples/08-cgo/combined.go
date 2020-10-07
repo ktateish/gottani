@@ -28,12 +28,12 @@ import "fmt"
 // Populated Libiraries
 // =============================================================================
 
-//line github.com/ktateish/gottani/examples/08-cgo/lib/lib.go:10
+//line example.com/lib/lib.go:10
 func Fact(n int) int {
 	return int(C.fact(C.longlong(n)))
 }
 
-//line github.com/ktateish/gottani/examples/08-cgo/lib/lib.go:14
+//line example.com/lib/lib.go:14
 func Pi() float64 {
 	return float64(C.pi())
 }

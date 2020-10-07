@@ -11,7 +11,7 @@ import (
 // Populated Libiraries
 // =============================================================================
 
-//line github.com/ktateish/gottani/examples/05-renaming/lib/lib.go:11
+//line example.com/lib/lib.go:11
 const (
 	lib_ConstA = 1 << iota
 	lib_ConstB
@@ -19,25 +19,25 @@ const (
 )
 
 const (
-//line github.com/ktateish/gottani/examples/05-renaming/lib/lib.go:9
+//line example.com/lib/lib.go:9
 	lib_Pi = math.Pi
 
-//line github.com/ktateish/gottani/examples/05-renaming/lib/lib.go:19
+//line example.com/lib/lib.go:19
 	lib_Y = 123
 
-//line github.com/ktateish/gottani/examples/05-renaming/lib/lib.go:19
+//line example.com/lib/lib.go:19
 )
 
 type lib_T float64
 
-//line github.com/ktateish/gottani/examples/05-renaming/lib/lib.go:62
+//line example.com/lib/lib.go:62
 func (t lib_T) Prn(w io.Writer) {
 	fmt.Fprintln(w, t)
 }
 
 var lib_VarX = "This is lib.VarX"
 
-//line github.com/ktateish/gottani/examples/05-renaming/lib/lib.go:35
+//line example.com/lib/lib.go:35
 func lib_Abs(a int) int {
 	if a < 0 {
 		return -a

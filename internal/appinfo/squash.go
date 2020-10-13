@@ -40,8 +40,7 @@ type SquashedApp struct {
 	// You can use it for printing out the application as a single file.
 	// Note that each node in it is derived from various postions of files including token.NoPos.
 	importDecls []ast.Decl
-	otherDecls  []ast.Decl
-	mainDecls   []ast.Decl
+	decls       []ast.Decl
 
 	// Fset keeps FileSet for the Syntax
 	fset *token.FileSet
@@ -124,19 +123,10 @@ func (sa *SquashedApp) Fprint(w io.Writer) error {
 	// So don't print source pos during import Decls.
 	pcfg.Mode |= printer.SourcePos
 
-	if 0 < len(sa.otherDecls) {
-		fmt.Fprintf(buf, "// =============================================================================\n")
-		fmt.Fprintf(buf, "// Populated Libiraries\n")
-		fmt.Fprintf(buf, "// =============================================================================\n\n")
+	for _, d := range sa.decls {
+		pcfg.Fprint(buf, sa.fset, d)
+		fmt.Fprintf(buf, "\n\n")
 	}
-	fprintDecls(pcfg, buf, sa.fset, sa.otherDecls)
-
-	if 0 < len(sa.otherDecls) {
-		fmt.Fprintf(buf, "// =============================================================================\n")
-		fmt.Fprintf(buf, "// Original Main Package\n")
-		fmt.Fprintf(buf, "// =============================================================================\n\n")
-	}
-	fprintDecls(pcfg, buf, sa.fset, sa.mainDecls)
 
 	b, err := format.Source(buf.Bytes())
 	if err != nil {
@@ -144,13 +134,6 @@ func (sa *SquashedApp) Fprint(w io.Writer) error {
 	}
 	w.Write(b)
 	return nil
-}
-
-func fprintDecls(pcfg printer.Config, w io.Writer, fset *token.FileSet, decls []ast.Decl) {
-	for _, d := range decls {
-		pcfg.Fprint(w, fset, d)
-		fmt.Fprintf(w, "\n\n")
-	}
 }
 
 // ingredients for SquashedApp
@@ -259,8 +242,7 @@ func (ingr *ingredients) newSquashedApp(ai appInfo) *SquashedApp {
 		}
 	}
 
-	res.mainDecls = removeInvalidSelector(mainDecls)
-	res.otherDecls = removeInvalidSelector(otherDecls)
+	res.decls = removeInvalidSelector(ingr.decls)
 
 	return res
 }

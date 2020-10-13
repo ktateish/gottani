@@ -9,18 +9,14 @@ import (
 // Populated Libiraries
 // =============================================================================
 
-type (
 //line example.com/lib/lib.go:3
-	Entries struct {
-		ids   []int
-		names []string
-	}
+type Entries struct {
+	ids   []int
+	names []string
+}
 
 //line example.com/lib/lib.go:32
-	SortByNames Entries
-
-//line example.com/lib/lib.go:32
-)
+type SortByNames Entries
 
 //line example.com/lib/lib.go:8
 func (e *Entries) Append(id int, name string) {

@@ -83,7 +83,9 @@ func newSquashedApp(ai appInfo) (*SquashedApp, error) {
 						ingr.constDecls = append(ingr.constDecls, decl)
 					}
 				case token.TYPE:
-					collectUsedType(ai, ingr, decl)
+					if hasUsedTypeSpec(ai, decl) {
+						ingr.typeDecls = append(ingr.typeDecls, decl)
+					}
 				case token.VAR:
 					if hasUsedValueSpec(ai, decl.Specs) {
 						ingr.varDecls = append(ingr.varDecls, decl)
@@ -92,10 +94,6 @@ func newSquashedApp(ai appInfo) (*SquashedApp, error) {
 			case *ast.FuncDecl:
 				id := decl.Name
 				if !ai.IsUsed(id) {
-					break
-				}
-				if ai.IsMethod(id) {
-					// already collected by collectUsedType()
 					break
 				}
 				if ai.IsInit(id) {
@@ -171,9 +169,7 @@ type ingredients struct {
 
 	constDecls []*ast.GenDecl // for used const GenDecls
 
-	typeWithMethodSpecs []ast.Decl      // For single declared types and its methods.  Methods can be declared apart from types declaration but combining them to one place makese the source more readable.
-	typeSpecs           []*ast.TypeSpec // type (alias) specs declared in `type ( ... )`
-	methodDecls         []*ast.FuncDecl // methods for the types above
+	typeDecls []*ast.GenDecl // for used type GenDecls
 
 	varDecls []*ast.GenDecl // for used var GenDecls
 
@@ -193,38 +189,12 @@ func (ingr *ingredients) squashRest(ai appInfo, used map[string]bool, filter fun
 		res = append(res, d)
 	}
 
-	for _, d := range ingr.typeWithMethodSpecs {
+	for _, d := range ingr.typeDecls {
 		if !filter(d) {
 			continue
 		}
-		td, ok := d.(*ast.GenDecl)
-		if ok {
-			// this is ok because each d has at most a single spec.
-			for _, spec := range td.Specs {
-				spec := spec.(*ast.TypeSpec)
-				renameTypeSpec(ai, used, spec)
-			}
-		}
-		res = append(res, td)
-	}
-
-	{
-		decl := &ast.GenDecl{
-			TokPos: token.NoPos,
-			Tok:    token.TYPE,
-			Lparen: token.NoPos,
-			Rparen: token.NoPos,
-		}
-		for _, sp := range ingr.typeSpecs {
-			if !filter(sp) {
-				continue
-			}
-			renameTypeSpec(ai, used, sp)
-			decl.Specs = append(decl.Specs, sp)
-		}
-		if 0 < len(decl.Specs) {
-			res = append(res, decl)
-		}
+		renameTypeDecl(ai, used, d)
+		res = append(res, d)
 	}
 
 	for _, d := range ingr.varDecls {
@@ -232,14 +202,6 @@ func (ingr *ingredients) squashRest(ai appInfo, used map[string]bool, filter fun
 			continue
 		}
 		renameConstVarDecl(ai, used, d)
-		res = append(res, d)
-	}
-
-	for _, d := range ingr.methodDecls {
-		if !filter(d) {
-			continue
-		}
-		// Methods doesn't need renaming
 		res = append(res, d)
 	}
 
@@ -255,7 +217,10 @@ func (ingr *ingredients) squashRest(ai appInfo, used map[string]bool, filter fun
 		if !filter(d) {
 			continue
 		}
-		renameFuncDecl(ai, used, d)
+		// Methods doesn't need renaming because they are type scope
+		if d.Recv == nil {
+			renameFuncDecl(ai, used, d)
+		}
 		res = append(res, d)
 	}
 	return res
@@ -386,14 +351,25 @@ func renameFuncDecl(ai appInfo, used map[string]bool, decl *ast.FuncDecl) {
 }
 
 // rename type name if needed.
-func renameTypeSpec(ai appInfo, used map[string]bool, spec *ast.TypeSpec) {
-	if !used[spec.Name.Name] {
-		used[spec.Name.Name] = true
-		return
+func renameTypeDecl(ai appInfo, used map[string]bool, decl *ast.GenDecl) {
+	var ids []*ast.Ident
+	var needRename bool
+	for _, spec := range decl.Specs {
+		spec := spec.(*ast.TypeSpec)
+		id := spec.Name
+		ids = append(ids, id)
+		needRename = needRename || used[id.Name]
 	}
-	bp := ai.GetPackage(spec)
-	prefix := bp.Name
-	renameIdents(ai, used, prefix, []*ast.Ident{spec.Name})
+
+	if needRename {
+		bp := ai.GetPackage(decl)
+		prefix := bp.Name
+		renameIdents(ai, used, prefix, ids)
+	} else {
+		for _, id := range ids {
+			used[id.Name] = true
+		}
+	}
 }
 
 // Rename a set of identities specified by the given ids adding the same name prefix
@@ -458,42 +434,17 @@ func hasUsedValueSpec(ai appInfo, specs []ast.Spec) bool {
 	return false
 }
 
-func collectUsedType(ai appInfo, ingr *ingredients, decl *ast.GenDecl) {
+func hasUsedTypeSpec(ai appInfo, decl *ast.GenDecl) bool {
 	if ai.IsUsed(decl) {
-		ingr.typeWithMethodSpecs = append(ingr.typeWithMethodSpecs, decl)
-		for _, spec := range decl.Specs {
-			spec, ok := spec.(*ast.TypeSpec)
-			if !ok {
-				continue
-			}
-			id := spec.Name
-			for _, mid := range ai.GetMethods(id) {
-				fdecl := ai.GetFuncDecl(mid)
-				if fdecl == nil {
-					continue
-				}
-				ingr.typeWithMethodSpecs = append(ingr.typeWithMethodSpecs, fdecl)
-			}
-		}
-		return
+		return true
 	}
 	for _, spec := range decl.Specs {
-		spec, ok := spec.(*ast.TypeSpec)
-		if !ok {
-			continue
-		}
+		spec := spec.(*ast.TypeSpec)
 		if ai.IsUsed(spec) {
-			ingr.typeSpecs = append(ingr.typeSpecs, spec)
-			id := spec.Name
-			for _, mid := range ai.GetMethods(id) {
-				fdecl := ai.GetFuncDecl(mid)
-				if fdecl == nil {
-					continue
-				}
-				ingr.methodDecls = append(ingr.methodDecls, fdecl)
-			}
+			return true
 		}
 	}
+	return false
 }
 
 func collectUsedImportC(ai appInfo, ingr *ingredients, decl *ast.GenDecl) {

@@ -21,14 +21,11 @@ const (
 	lib_ConstC
 )
 
-//line example.com/lib/lib.go:19
-const lib_Y = 123
-
-//line example.com/lib/lib.go:60
-type lib_T float64
-
 //line example.com/lib/lib.go:17
 var lib_VarX = "This is lib.VarX"
+
+//line example.com/lib/lib.go:19
+const lib_Y = 123
 
 //line example.com/lib/lib.go:35
 func lib_Abs(a int) int {
@@ -37,6 +34,9 @@ func lib_Abs(a int) int {
 	}
 	return a
 }
+
+//line example.com/lib/lib.go:60
+type lib_T float64
 
 //line example.com/lib/lib.go:62
 func (t lib_T) Prn(w io.Writer) {
@@ -53,9 +53,6 @@ const Pi = 3.14
 //line main.go:13
 const ConstB = "This is main.ConstB"
 
-//line main.go:26
-type T int
-
 //line main.go:15
 var VarX = "This is main.VarX"
 
@@ -69,6 +66,9 @@ func Abs(a int) int {
 	}
 	return a
 }
+
+//line main.go:26
+type T int
 
 //line main.go:28
 func (t T) Prn(w io.Writer) {

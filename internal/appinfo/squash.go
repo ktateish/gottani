@@ -80,15 +80,15 @@ func newSquashedApp(ai appInfo) (*SquashedApp, error) {
 					ingr.importCSpecs = append(ingr.importCSpecs, cspecs...)
 				case token.CONST:
 					if hasUsedValueSpec(ai, decl.Specs) {
-						ingr.constDecls = append(ingr.constDecls, decl)
+						ingr.decls = append(ingr.decls, decl)
 					}
 				case token.TYPE:
 					if hasUsedTypeSpec(ai, decl) {
-						ingr.typeDecls = append(ingr.typeDecls, decl)
+						ingr.decls = append(ingr.decls, decl)
 					}
 				case token.VAR:
 					if hasUsedValueSpec(ai, decl.Specs) {
-						ingr.varDecls = append(ingr.varDecls, decl)
+						ingr.decls = append(ingr.decls, decl)
 					}
 				}
 			case *ast.FuncDecl:
@@ -96,18 +96,10 @@ func newSquashedApp(ai appInfo) (*SquashedApp, error) {
 				if !ai.IsUsed(id) {
 					break
 				}
-				if ai.IsInit(id) {
-					ingr.initDecls = append(ingr.initDecls, decl)
-					break
-				}
-				if ai.GetEntryPointDecl() == decl {
-					break
-				}
-				ingr.funcDecls = append(ingr.funcDecls, decl)
+				ingr.decls = append(ingr.decls, decl)
 			}
 		}
 	})
-	ingr.mainDecl = ai.GetEntryPointDecl()
 
 	return ingr.newSquashedApp(ai), nil
 
@@ -167,63 +159,7 @@ type ingredients struct {
 	importCSpecs []*ast.ImportSpec // Not likely but `import ( ... /* <C Source> */\n<white spaces>"C" ...` format is allowed and this field is for that case
 	importSpecs  []*ast.ImportSpec // For normal ImportSpecs. they can be packed into a single import ( ... ) notation
 
-	constDecls []*ast.GenDecl // for used const GenDecls
-
-	typeDecls []*ast.GenDecl // for used type GenDecls
-
-	varDecls []*ast.GenDecl // for used var GenDecls
-
-	initDecls []*ast.FuncDecl // init should be above for readability
-	funcDecls []*ast.FuncDecl // normal functions
-
-	mainDecl *ast.FuncDecl // last function shoud be main()
-}
-
-func (ingr *ingredients) squashRest(ai appInfo, used map[string]bool, filter func(node ast.Node) bool) []ast.Decl {
-	var res []ast.Decl
-	for _, d := range ingr.constDecls {
-		if !filter(d) {
-			continue
-		}
-		renameGenDecl(ai, used, d)
-		res = append(res, d)
-	}
-
-	for _, d := range ingr.typeDecls {
-		if !filter(d) {
-			continue
-		}
-		renameGenDecl(ai, used, d)
-		res = append(res, d)
-	}
-
-	for _, d := range ingr.varDecls {
-		if !filter(d) {
-			continue
-		}
-		renameGenDecl(ai, used, d)
-		res = append(res, d)
-	}
-
-	for _, d := range ingr.initDecls {
-		if !filter(d) {
-			continue
-		}
-		// init() doesn't need renaming
-		res = append(res, d)
-	}
-
-	for _, d := range ingr.funcDecls {
-		if !filter(d) {
-			continue
-		}
-		// Methods doesn't need renaming because they are type scope
-		if d.Recv == nil {
-			renameFuncDecl(ai, used, d)
-		}
-		res = append(res, d)
-	}
-	return res
+	decls []ast.Decl // for used GenDecls/FuncDecls
 }
 
 func (ingr *ingredients) squashImports(ai appInfo, used map[string]bool) []ast.Decl {
@@ -259,13 +195,14 @@ func (ingr *ingredients) newUsedNames(ai appInfo) map[string]bool {
 	// used identity in the target file
 	used := make(map[string]bool)
 	// collect names in scopes of each function body
-	decls := make([]*ast.FuncDecl, 0, len(ingr.initDecls)+len(ingr.funcDecls)+1)
-	for _, ds := range [][]*ast.FuncDecl{ingr.initDecls, ingr.funcDecls} {
-		for _, d := range ds {
-			decls = append(decls, d)
+	decls := make([]*ast.FuncDecl, 0, len(ingr.decls))
+	for _, d := range ingr.decls {
+		d, ok := d.(*ast.FuncDecl)
+		if !ok {
+			continue
 		}
+		decls = append(decls, d)
 	}
-	decls = append(decls, ingr.mainDecl)
 	for _, d := range decls {
 		ast.Inspect(d, func(node ast.Node) bool {
 			id, ok := node.(*ast.Ident)
@@ -285,9 +222,6 @@ func (ingr *ingredients) newUsedNames(ai appInfo) map[string]bool {
 			return false
 		})
 	}
-
-	// entry point should not be renamed, so register its name here
-	used[ingr.mainDecl.Name.Name] = true
 	return used
 }
 
@@ -306,12 +240,24 @@ func (ingr *ingredients) newSquashedApp(ai appInfo) *SquashedApp {
 
 	res.importDecls = ingr.squashImports(ai, used)
 
-	pred := func(node ast.Node) bool {
-		return ai.GetPackage(node) == mainPkg
+	var mainDecls, otherDecls []ast.Decl
+	for _, d := range ingr.decls {
+		if ai.GetPackage(d) == mainPkg {
+			mainDecls = append(mainDecls, d)
+		} else {
+			otherDecls = append(otherDecls, d)
+		}
 	}
-	mainDecls := ingr.squashRest(ai, used, pred)
-	otherDecls := ingr.squashRest(ai, used, func(node ast.Node) bool { return !pred(node) })
-	mainDecls = append(mainDecls, ingr.mainDecl)
+	for _, decls := range [][]ast.Decl{mainDecls, otherDecls} {
+		for _, d := range decls {
+			switch d := d.(type) {
+			case *ast.GenDecl:
+				renameGenDecl(ai, used, d)
+			case *ast.FuncDecl:
+				renameFuncDecl(ai, used, d)
+			}
+		}
+	}
 
 	res.mainDecls = removeInvalidSelector(mainDecls)
 	res.otherDecls = removeInvalidSelector(otherDecls)
@@ -341,6 +287,14 @@ func removeInvalidSelector(decls []ast.Decl) []ast.Decl {
 
 // rename function name if needed.
 func renameFuncDecl(ai appInfo, used map[string]bool, decl *ast.FuncDecl) {
+	// Methods doesn't need renaming because they are type scope
+	if decl.Recv != nil {
+		return
+	}
+	// init() doesn't need renaming too because they can be duplicated
+	if decl.Name.Name == "init" {
+		return
+	}
 	if !used[decl.Name.Name] {
 		used[decl.Name.Name] = true
 		return

@@ -15,9 +15,6 @@ type Entries struct {
 	names []string
 }
 
-//line example.com/lib/lib.go:32
-type SortByNames Entries
-
 //line example.com/lib/lib.go:8
 func (e *Entries) Append(id int, name string) {
 	e.ids = append(e.ids, id)
@@ -46,6 +43,9 @@ func (e *Entries) Swap(i, j int) {
 	e.ids[i], e.ids[j] = e.ids[j], e.ids[i]
 	e.names[i], e.names[j] = e.names[j], e.names[i]
 }
+
+//line example.com/lib/lib.go:32
+type SortByNames Entries
 
 //line example.com/lib/lib.go:34
 func (e *SortByNames) Len() int {

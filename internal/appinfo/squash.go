@@ -85,7 +85,9 @@ func newSquashedApp(ai appInfo) (*SquashedApp, error) {
 				case token.TYPE:
 					collectUsedType(ai, ingr, decl)
 				case token.VAR:
-					collectUsedVar(ai, ingr, decl)
+					if hasUsedValueSpec(ai, decl.Specs) {
+						ingr.varDecls = append(ingr.varDecls, decl)
+					}
 				}
 			case *ast.FuncDecl:
 				id := decl.Name
@@ -173,7 +175,7 @@ type ingredients struct {
 	typeSpecs           []*ast.TypeSpec // type (alias) specs declared in `type ( ... )`
 	methodDecls         []*ast.FuncDecl // methods for the types above
 
-	varSpecs []*ast.ValueSpec // values can be packed into a single `var ( ... )` notation
+	varDecls []*ast.GenDecl // for used var GenDecls
 
 	initDecls []*ast.FuncDecl // init should be above for readability
 	funcDecls []*ast.FuncDecl // normal functions
@@ -187,7 +189,7 @@ func (ingr *ingredients) squashRest(ai appInfo, used map[string]bool, filter fun
 		if !filter(d) {
 			continue
 		}
-		renameConstDecl(ai, used, d)
+		renameConstVarDecl(ai, used, d)
 		res = append(res, d)
 	}
 
@@ -225,31 +227,20 @@ func (ingr *ingredients) squashRest(ai appInfo, used map[string]bool, filter fun
 		}
 	}
 
+	for _, d := range ingr.varDecls {
+		if !filter(d) {
+			continue
+		}
+		renameConstVarDecl(ai, used, d)
+		res = append(res, d)
+	}
+
 	for _, d := range ingr.methodDecls {
 		if !filter(d) {
 			continue
 		}
 		// Methods doesn't need renaming
 		res = append(res, d)
-	}
-
-	{
-		decl := &ast.GenDecl{
-			TokPos: token.NoPos,
-			Tok:    token.VAR,
-			Lparen: token.NoPos,
-			Rparen: token.NoPos,
-		}
-		for _, sp := range ingr.varSpecs {
-			if !filter(sp) {
-				continue
-			}
-			renameValueSpec(ai, used, sp)
-			decl.Specs = append(decl.Specs, sp)
-		}
-		if 0 < len(decl.Specs) {
-			res = append(res, decl)
-		}
 	}
 
 	for _, d := range ingr.initDecls {
@@ -431,29 +422,9 @@ func renameIdents(ai appInfo, used map[string]bool, prefix string, ids []*ast.Id
 	}
 }
 
-// rename const or var name if needed
-func renameValueSpec(ai appInfo, used map[string]bool, spec *ast.ValueSpec) {
-	var ids []*ast.Ident
-	var needRename bool
-	for _, id := range spec.Names {
-		ids = append(ids, id)
-		needRename = needRename || used[id.Name]
-	}
-
-	if needRename {
-		bp := ai.GetPackage(spec)
-		prefix := bp.Name
-		renameIdents(ai, used, prefix, ids)
-	} else {
-		for _, id := range ids {
-			used[id.Name] = true
-		}
-	}
-}
-
 // rename const name.  It scans all specs in the decl and rename all ident when
 // one of them need renaming.  It is done for readability.
-func renameConstDecl(ai appInfo, used map[string]bool, decl *ast.GenDecl) {
+func renameConstVarDecl(ai appInfo, used map[string]bool, decl *ast.GenDecl) {
 	var ids []*ast.Ident
 	var needRename bool
 	for _, spec := range decl.Specs {
@@ -573,26 +544,6 @@ func collectUsedImport(ai appInfo, decl *ast.GenDecl) (specs []*ast.ImportSpec, 
 		specs = append(specs, spec)
 	}
 	return
-}
-
-func collectUsedVar(ai appInfo, ingr *ingredients, decl *ast.GenDecl) {
-	for _, spec := range decl.Specs {
-		spec, ok := spec.(*ast.ValueSpec)
-		if !ok {
-			continue
-		}
-
-		var used bool
-		for _, id := range spec.Names {
-			if ai.IsUsed(id) {
-				used = true
-			}
-		}
-		if !used {
-			continue
-		}
-		ingr.varSpecs = append(ingr.varSpecs, spec)
-	}
 }
 
 func createImportDeclFromCFile(fset *token.FileSet, name, path string) (*ast.GenDecl, error) {

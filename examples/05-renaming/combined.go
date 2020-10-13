@@ -26,12 +26,13 @@ const lib_Y = 123
 
 type lib_T float64
 
+//line example.com/lib/lib.go:17
+var lib_VarX = "This is lib.VarX"
+
 //line example.com/lib/lib.go:62
 func (t lib_T) Prn(w io.Writer) {
 	fmt.Fprintln(w, t)
 }
-
-var lib_VarX = "This is lib.VarX"
 
 //line example.com/lib/lib.go:35
 func lib_Abs(a int) int {
@@ -53,19 +54,16 @@ const ConstB = "This is main.ConstB"
 
 type T int
 
+//line main.go:15
+var VarX = "This is main.VarX"
+
+//line main.go:17
+var Y = "This is main.Y"
+
 //line main.go:28
 func (t T) Prn(w io.Writer) {
 	fmt.Fprintln(w, t)
 }
-
-var (
-//line main.go:15
-	VarX = "This is main.VarX"
-
-	Y = "This is main.Y"
-
-//line main.go:17
-)
 
 //line main.go:19
 func Abs(a int) int {

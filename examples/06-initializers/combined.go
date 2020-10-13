@@ -6,15 +6,11 @@ import "fmt"
 // Populated Libiraries
 // =============================================================================
 
-var (
 //line example.com/lib/lib.go:3
-	X int
+var X int
 
 //line example.com/lib/lib.go:13
-	Y int
-
-//line example.com/lib/lib.go:13
-)
+var Y int
 
 //line example.com/lib/lib.go:9
 func init() {

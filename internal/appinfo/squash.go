@@ -11,7 +11,9 @@ import (
 	"go/token"
 	"io"
 	"io/ioutil"
+	"math"
 	"path/filepath"
+
 	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
@@ -40,8 +42,10 @@ type SquashedApp struct {
 	// You can use it for printing out the application as a single file.
 	// Note that each node in it is derived from various postions of files including token.NoPos.
 	importDecls []ast.Decl
-	otherDecls  []ast.Decl
-	mainDecls   []ast.Decl
+	decls       []ast.Decl
+
+	// comments for decls
+	comments map[ast.Decl][]*ast.CommentGroup
 
 	// Fset keeps FileSet for the Syntax
 	fset *token.FileSet
@@ -50,7 +54,9 @@ type SquashedApp struct {
 // newSquashedApp build SquashedApp from appInfo
 func newSquashedApp(ai appInfo) (*SquashedApp, error) {
 	// collect used items for the SquashedApp
-	ingr := &ingredients{}
+	ingr := &ingredients{
+		comments: make(map[ast.Decl][]*ast.CommentGroup),
+	}
 	fset := ai.FileSet()
 
 	for _, bp := range ai.Packages() {
@@ -69,40 +75,50 @@ func newSquashedApp(ai appInfo) (*SquashedApp, error) {
 	}
 
 	forEachFile(ai, func(bp *build.Package, f *ast.File) {
+		var cidx int
 		for _, decl := range f.Decls {
+			var adding ast.Decl
 			switch decl := decl.(type) {
 			case *ast.GenDecl:
 				switch decl.Tok {
 				case token.IMPORT:
-					collectUsedImport(ai, ingr, decl)
+					specs, cdecls, cspecs := collectUsedImport(ai, decl)
+					ingr.importSpecs = append(ingr.importSpecs, specs...)
+					ingr.importCDecls = append(ingr.importCDecls, cdecls...)
+					ingr.importCSpecs = append(ingr.importCSpecs, cspecs...)
 				case token.CONST:
-					collectUsedConst(ai, ingr, decl)
+					if hasUsedValueSpec(ai, decl.Specs) {
+						adding = decl
+					}
 				case token.TYPE:
-					collectUsedType(ai, ingr, decl)
+					if hasUsedTypeSpec(ai, decl) {
+						adding = decl
+					}
 				case token.VAR:
-					collectUsedVar(ai, ingr, decl)
+					if hasUsedValueSpec(ai, decl.Specs) {
+						adding = decl
+					}
 				}
 			case *ast.FuncDecl:
 				id := decl.Name
 				if !ai.IsUsed(id) {
 					break
 				}
-				if ai.IsMethod(id) {
-					// already collected by collectUsedType()
-					break
+				adding = decl
+			}
+			if adding != nil {
+				ingr.decls = append(ingr.decls, adding)
+				for ; cidx < len(f.Comments) && f.Comments[cidx].Pos() < adding.Pos(); cidx++ {
+					// skip previous comments
 				}
-				if ai.IsInit(id) {
-					ingr.initDecls = append(ingr.initDecls, decl)
-					break
+				var cgs []*ast.CommentGroup
+				for ; cidx < len(f.Comments) && f.Comments[cidx].End() <= adding.End(); cidx++ {
+					cgs = append(cgs, f.Comments[cidx])
 				}
-				if ai.GetEntryPointDecl() == decl {
-					break
-				}
-				ingr.funcDecls = append(ingr.funcDecls, decl)
+				ingr.comments[adding] = cgs
 			}
 		}
 	})
-	ingr.mainDecl = ai.GetEntryPointDecl()
 
 	return ingr.newSquashedApp(ai), nil
 
@@ -111,7 +127,7 @@ func newSquashedApp(ai appInfo) (*SquashedApp, error) {
 // Fprint formats the source code and writes it to the given io.Writer
 func (sa *SquashedApp) Fprint(w io.Writer) error {
 	buf := new(bytes.Buffer)
-	fmt.Fprintf(buf, "package %s\n\n", sa.pkgName)
+	fmt.Fprintf(buf, "package %s", sa.pkgName)
 	pcfg := printer.Config{
 		Mode:     printer.TabIndent | printer.UseSpaces,
 		Tabwidth: 8,
@@ -119,27 +135,61 @@ func (sa *SquashedApp) Fprint(w io.Writer) error {
 	}
 
 	for _, decl := range sa.importDecls {
-		pcfg.Fprint(buf, sa.fset, decl)
 		fmt.Fprintf(buf, "\n\n")
+		pcfg.Fprint(buf, sa.fset, decl)
 	}
 
-	// The printer.SourcePos should be used but some Cgo comments got borken by them.
-	// So don't print source pos during import Decls.
-	pcfg.Mode |= printer.SourcePos
-
-	if 0 < len(sa.otherDecls) {
-		fmt.Fprintf(buf, "// =============================================================================\n")
-		fmt.Fprintf(buf, "// Populated Libiraries\n")
-		fmt.Fprintf(buf, "// =============================================================================\n\n")
+	lines := func(nd ast.Decl) (int, int) {
+		var doc *ast.CommentGroup
+		switch nd := nd.(type) {
+		case *ast.GenDecl:
+			doc = nd.Doc
+		case *ast.FuncDecl:
+			doc = nd.Doc
+		}
+		var start int
+		if doc != nil {
+			start = sa.fset.Position(doc.Pos()).Line
+		} else {
+			start = sa.fset.Position(nd.Pos()).Line
+		}
+		return start, sa.fset.Position(nd.End()).Line
 	}
-	fprintDecls(pcfg, buf, sa.fset, sa.otherDecls)
-
-	if 0 < len(sa.otherDecls) {
-		fmt.Fprintf(buf, "// =============================================================================\n")
-		fmt.Fprintf(buf, "// Original Main Package\n")
-		fmt.Fprintf(buf, "// =============================================================================\n\n")
+	base := func(nd ast.Node) int {
+		return sa.fset.File(nd.Pos()).Base()
 	}
-	fprintDecls(pcfg, buf, sa.fset, sa.mainDecls)
+	newlines := func(i int) int {
+		if i == 0 || base(sa.decls[i-1]) != base(sa.decls[i]) {
+			return math.MaxInt32
+		}
+		_, lastEnd := lines(sa.decls[i-1])
+		thisStart, _ := lines(sa.decls[i])
+		return thisStart - lastEnd
+	}
+	min := func(a, b int) int {
+		if a < b {
+			return a
+		}
+		return b
+	}
+
+	for i, d := range sa.decls {
+		nls := newlines(i)
+		for j := 0; j < min(nls, 2); j++ {
+			fmt.Fprintf(buf, "\n")
+		}
+		if nls <= 2 {
+			pcfg.Mode &^= printer.SourcePos
+		} else {
+			pcfg.Mode |= printer.SourcePos
+		}
+		cnd := &printer.CommentedNode{
+			Node:     d,
+			Comments: sa.comments[d],
+		}
+
+		pcfg.Fprint(buf, sa.fset, cnd)
+	}
 
 	b, err := format.Source(buf.Bytes())
 	if err != nil {
@@ -149,140 +199,15 @@ func (sa *SquashedApp) Fprint(w io.Writer) error {
 	return nil
 }
 
-func fprintDecls(pcfg printer.Config, w io.Writer, fset *token.FileSet, decls []ast.Decl) {
-	for _, d := range decls {
-		pcfg.Fprint(w, fset, d)
-		fmt.Fprintf(w, "\n\n")
-	}
-}
-
 // ingredients for SquashedApp
 type ingredients struct {
 	importCDecls []*ast.GenDecl    // In `import "C"` notation, the C source is associated to GenDecl, not to ImportSpec, so the whole GenDecl is needed
 	importCSpecs []*ast.ImportSpec // Not likely but `import ( ... /* <C Source> */\n<white spaces>"C" ...` format is allowed and this field is for that case
 	importSpecs  []*ast.ImportSpec // For normal ImportSpecs. they can be packed into a single import ( ... ) notation
 
-	constDecls []*ast.GenDecl   // for `const ( ... )` using `iota`.  Values generated by iota are associated to GenDecl, not to ValueSpec.
-	constSpecs []*ast.ValueSpec // For normal const specs.
+	decls []ast.Decl // for used GenDecls/FuncDecls
 
-	typeWithMethodSpecs []ast.Decl      // For single declared types and its methods.  Methods can be declared apart from types declaration but combining them to one place makese the source more readable.
-	typeSpecs           []*ast.TypeSpec // type (alias) specs declared in `type ( ... )`
-	methodDecls         []*ast.FuncDecl // methods for the types above
-
-	varSpecs []*ast.ValueSpec // values can be packed into a single `var ( ... )` notation
-
-	initDecls []*ast.FuncDecl // init should be above for readability
-	funcDecls []*ast.FuncDecl // normal functions
-
-	mainDecl *ast.FuncDecl // last function shoud be main()
-}
-
-func (ingr *ingredients) squashRest(ai appInfo, used map[string]bool, filter func(node ast.Node) bool) []ast.Decl {
-	var res []ast.Decl
-	for _, d := range ingr.constDecls {
-		if !filter(d) {
-			continue
-		}
-		renameConstDecl(ai, used, d)
-		res = append(res, d)
-	}
-
-	{
-		decl := &ast.GenDecl{
-			TokPos: token.NoPos,
-			Tok:    token.CONST,
-			Lparen: token.NoPos,
-			Rparen: token.NoPos,
-		}
-		for _, sp := range ingr.constSpecs {
-			if !filter(sp) {
-				continue
-			}
-			renameValueSpec(ai, used, sp)
-			decl.Specs = append(decl.Specs, sp)
-		}
-		if 0 < len(decl.Specs) {
-			res = append(res, decl)
-		}
-	}
-
-	for _, d := range ingr.typeWithMethodSpecs {
-		if !filter(d) {
-			continue
-		}
-		td, ok := d.(*ast.GenDecl)
-		if ok {
-			// this is ok because each d has at most a single spec.
-			for _, spec := range td.Specs {
-				spec := spec.(*ast.TypeSpec)
-				renameTypeSpec(ai, used, spec)
-			}
-		}
-		res = append(res, td)
-	}
-
-	{
-		decl := &ast.GenDecl{
-			TokPos: token.NoPos,
-			Tok:    token.TYPE,
-			Lparen: token.NoPos,
-			Rparen: token.NoPos,
-		}
-		for _, sp := range ingr.typeSpecs {
-			if !filter(sp) {
-				continue
-			}
-			renameTypeSpec(ai, used, sp)
-			decl.Specs = append(decl.Specs, sp)
-		}
-		if 0 < len(decl.Specs) {
-			res = append(res, decl)
-		}
-	}
-
-	for _, d := range ingr.methodDecls {
-		if !filter(d) {
-			continue
-		}
-		// Methods doesn't need renaming
-		res = append(res, d)
-	}
-
-	{
-		decl := &ast.GenDecl{
-			TokPos: token.NoPos,
-			Tok:    token.VAR,
-			Lparen: token.NoPos,
-			Rparen: token.NoPos,
-		}
-		for _, sp := range ingr.varSpecs {
-			if !filter(sp) {
-				continue
-			}
-			renameValueSpec(ai, used, sp)
-			decl.Specs = append(decl.Specs, sp)
-		}
-		if 0 < len(decl.Specs) {
-			res = append(res, decl)
-		}
-	}
-
-	for _, d := range ingr.initDecls {
-		if !filter(d) {
-			continue
-		}
-		// init() doesn't need renaming
-		res = append(res, d)
-	}
-
-	for _, d := range ingr.funcDecls {
-		if !filter(d) {
-			continue
-		}
-		renameFuncDecl(ai, used, d)
-		res = append(res, d)
-	}
-	return res
+	comments map[ast.Decl][]*ast.CommentGroup // for comments in GenDecls/FuncDecls
 }
 
 func (ingr *ingredients) squashImports(ai appInfo, used map[string]bool) []ast.Decl {
@@ -318,13 +243,14 @@ func (ingr *ingredients) newUsedNames(ai appInfo) map[string]bool {
 	// used identity in the target file
 	used := make(map[string]bool)
 	// collect names in scopes of each function body
-	decls := make([]*ast.FuncDecl, 0, len(ingr.initDecls)+len(ingr.funcDecls)+1)
-	for _, ds := range [][]*ast.FuncDecl{ingr.initDecls, ingr.funcDecls} {
-		for _, d := range ds {
-			decls = append(decls, d)
+	decls := make([]*ast.FuncDecl, 0, len(ingr.decls))
+	for _, d := range ingr.decls {
+		d, ok := d.(*ast.FuncDecl)
+		if !ok {
+			continue
 		}
+		decls = append(decls, d)
 	}
-	decls = append(decls, ingr.mainDecl)
 	for _, d := range decls {
 		ast.Inspect(d, func(node ast.Node) bool {
 			id, ok := node.(*ast.Ident)
@@ -344,9 +270,6 @@ func (ingr *ingredients) newUsedNames(ai appInfo) map[string]bool {
 			return false
 		})
 	}
-
-	// entry point should not be renamed, so register its name here
-	used[ingr.mainDecl.Name.Name] = true
 	return used
 }
 
@@ -365,15 +288,27 @@ func (ingr *ingredients) newSquashedApp(ai appInfo) *SquashedApp {
 
 	res.importDecls = ingr.squashImports(ai, used)
 
-	pred := func(node ast.Node) bool {
-		return ai.GetPackage(node) == mainPkg
+	var mainDecls, otherDecls []ast.Decl
+	for _, d := range ingr.decls {
+		if ai.GetPackage(d) == mainPkg {
+			mainDecls = append(mainDecls, d)
+		} else {
+			otherDecls = append(otherDecls, d)
+		}
 	}
-	mainDecls := ingr.squashRest(ai, used, pred)
-	otherDecls := ingr.squashRest(ai, used, func(node ast.Node) bool { return !pred(node) })
-	mainDecls = append(mainDecls, ingr.mainDecl)
+	for _, decls := range [][]ast.Decl{mainDecls, otherDecls} {
+		for _, d := range decls {
+			switch d := d.(type) {
+			case *ast.GenDecl:
+				renameGenDecl(ai, used, d)
+			case *ast.FuncDecl:
+				renameFuncDecl(ai, used, d)
+			}
+		}
+	}
 
-	res.mainDecls = removeInvalidSelector(mainDecls)
-	res.otherDecls = removeInvalidSelector(otherDecls)
+	res.decls = removeInvalidSelector(ingr.decls)
+	res.comments = ingr.comments
 
 	return res
 }
@@ -400,6 +335,14 @@ func removeInvalidSelector(decls []ast.Decl) []ast.Decl {
 
 // rename function name if needed.
 func renameFuncDecl(ai appInfo, used map[string]bool, decl *ast.FuncDecl) {
+	// Methods doesn't need renaming because they are type scope
+	if decl.Recv != nil {
+		return
+	}
+	// init() doesn't need renaming too because they can be duplicated
+	if decl.Name.Name == "init" {
+		return
+	}
 	if !used[decl.Name.Name] {
 		used[decl.Name.Name] = true
 		return
@@ -409,15 +352,35 @@ func renameFuncDecl(ai appInfo, used map[string]bool, decl *ast.FuncDecl) {
 	renameIdents(ai, used, prefix, []*ast.Ident{decl.Name})
 }
 
-// rename type name if needed.
-func renameTypeSpec(ai appInfo, used map[string]bool, spec *ast.TypeSpec) {
-	if !used[spec.Name.Name] {
-		used[spec.Name.Name] = true
-		return
+// rename type, const, var name if needed.
+// It scans all specs in the decl and rename all ident when one of them need
+// renaming.  It is done for readability.
+func renameGenDecl(ai appInfo, used map[string]bool, decl *ast.GenDecl) {
+	var ids []*ast.Ident
+	var needRename bool
+	for _, spec := range decl.Specs {
+		switch spec := spec.(type) {
+		case *ast.TypeSpec:
+			id := spec.Name
+			ids = append(ids, id)
+			needRename = needRename || used[id.Name]
+		case *ast.ValueSpec:
+			for _, id := range spec.Names {
+				ids = append(ids, id)
+				needRename = needRename || used[id.Name]
+			}
+		}
 	}
-	bp := ai.GetPackage(spec)
-	prefix := bp.Name
-	renameIdents(ai, used, prefix, []*ast.Ident{spec.Name})
+
+	if needRename {
+		bp := ai.GetPackage(decl)
+		prefix := bp.Name
+		renameIdents(ai, used, prefix, ids)
+	} else {
+		for _, id := range ids {
+			used[id.Name] = true
+		}
+	}
 }
 
 // Rename a set of identities specified by the given ids adding the same name prefix
@@ -446,123 +409,29 @@ func renameIdents(ai appInfo, used map[string]bool, prefix string, ids []*ast.Id
 	}
 }
 
-// rename const or var name if needed
-func renameValueSpec(ai appInfo, used map[string]bool, spec *ast.ValueSpec) {
-	var ids []*ast.Ident
-	var needRename bool
-	for _, id := range spec.Names {
-		ids = append(ids, id)
-		needRename = needRename || used[id.Name]
-	}
-
-	if needRename {
-		bp := ai.GetPackage(spec)
-		prefix := bp.Name
-		renameIdents(ai, used, prefix, ids)
-	} else {
-		for _, id := range ids {
-			used[id.Name] = true
-		}
-	}
-}
-
-// rename const name.  It scans all specs in the decl and rename all ident when
-// one of them need renaming.  It is done for readability.
-func renameConstDecl(ai appInfo, used map[string]bool, decl *ast.GenDecl) {
-	var ids []*ast.Ident
-	var needRename bool
-	for _, spec := range decl.Specs {
-		spec := spec.(*ast.ValueSpec)
-		for _, id := range spec.Names {
-			ids = append(ids, id)
-			needRename = needRename || used[id.Name]
-		}
-	}
-
-	if needRename {
-		bp := ai.GetPackage(decl)
-		prefix := bp.Name
-		renameIdents(ai, used, prefix, ids)
-	} else {
-		for _, id := range ids {
-			used[id.Name] = true
-		}
-	}
-}
-
-func collectUsedConst(ai appInfo, ingr *ingredients, decl *ast.GenDecl) {
-	var vs []*ast.ValueSpec
-	var usesIota bool
-	for _, spec := range decl.Specs {
-		var used bool
+func hasUsedValueSpec(ai appInfo, specs []ast.Spec) bool {
+	for _, spec := range specs {
 		spec := spec.(*ast.ValueSpec)
 		for _, id := range spec.Names {
 			if ai.IsUsed(id) {
-				used = true
+				return true
 			}
 		}
-		if used {
-			vs = append(vs, spec)
-		}
-		for _, val := range spec.Values {
-			ast.Inspect(val, func(node ast.Node) bool {
-				if id, ok := node.(*ast.Ident); ok {
-					if id.Name == "iota" {
-						usesIota = true
-					}
-				}
-				return true
-			})
-		}
 	}
-	if len(vs) == 0 {
-		return
-	}
-	if usesIota {
-		ingr.constDecls = append(ingr.constDecls, decl)
-		return
-	}
-	for _, spec := range vs {
-		ingr.constSpecs = append(ingr.constSpecs, spec)
-	}
+	return false
 }
 
-func collectUsedType(ai appInfo, ingr *ingredients, decl *ast.GenDecl) {
+func hasUsedTypeSpec(ai appInfo, decl *ast.GenDecl) bool {
 	if ai.IsUsed(decl) {
-		ingr.typeWithMethodSpecs = append(ingr.typeWithMethodSpecs, decl)
-		for _, spec := range decl.Specs {
-			spec, ok := spec.(*ast.TypeSpec)
-			if !ok {
-				continue
-			}
-			id := spec.Name
-			for _, mid := range ai.GetMethods(id) {
-				fdecl := ai.GetFuncDecl(mid)
-				if fdecl == nil {
-					continue
-				}
-				ingr.typeWithMethodSpecs = append(ingr.typeWithMethodSpecs, fdecl)
-			}
-		}
-		return
+		return true
 	}
 	for _, spec := range decl.Specs {
-		spec, ok := spec.(*ast.TypeSpec)
-		if !ok {
-			continue
-		}
+		spec := spec.(*ast.TypeSpec)
 		if ai.IsUsed(spec) {
-			ingr.typeSpecs = append(ingr.typeSpecs, spec)
-			id := spec.Name
-			for _, mid := range ai.GetMethods(id) {
-				fdecl := ai.GetFuncDecl(mid)
-				if fdecl == nil {
-					continue
-				}
-				ingr.methodDecls = append(ingr.methodDecls, fdecl)
-			}
+			return true
 		}
 	}
+	return false
 }
 
 func collectUsedImportC(ai appInfo, ingr *ingredients, decl *ast.GenDecl) {
@@ -582,7 +451,7 @@ func collectUsedImportC(ai appInfo, ingr *ingredients, decl *ast.GenDecl) {
 	}
 }
 
-func collectUsedImport(ai appInfo, ingr *ingredients, decl *ast.GenDecl) {
+func collectUsedImport(ai appInfo, decl *ast.GenDecl) (specs []*ast.ImportSpec, cdecls []*ast.GenDecl, cspecs []*ast.ImportSpec) {
 	for _, spec := range decl.Specs {
 		spec, ok := spec.(*ast.ImportSpec)
 		if !ok {
@@ -604,34 +473,15 @@ func collectUsedImport(ai appInfo, ingr *ingredients, decl *ast.GenDecl) {
 		}
 		if spec.Path.Value == `"C"` {
 			if len(decl.Specs) == 1 {
-				ingr.importCDecls = append(ingr.importCDecls, decl)
+				cdecls = append(cdecls, decl)
 			} else {
-				ingr.importCSpecs = append(ingr.importCSpecs, spec)
+				cspecs = append(cspecs, spec)
 			}
 			continue
 		}
-		ingr.importSpecs = append(ingr.importSpecs, spec)
+		specs = append(specs, spec)
 	}
-}
-
-func collectUsedVar(ai appInfo, ingr *ingredients, decl *ast.GenDecl) {
-	for _, spec := range decl.Specs {
-		spec, ok := spec.(*ast.ValueSpec)
-		if !ok {
-			continue
-		}
-
-		var used bool
-		for _, id := range spec.Names {
-			if ai.IsUsed(id) {
-				used = true
-			}
-		}
-		if !used {
-			continue
-		}
-		ingr.varSpecs = append(ingr.varSpecs, spec)
-	}
+	return
 }
 
 func createImportDeclFromCFile(fset *token.FileSet, name, path string) (*ast.GenDecl, error) {

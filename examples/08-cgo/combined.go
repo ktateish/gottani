@@ -24,23 +24,14 @@ import "C"
 
 import "fmt"
 
-// =============================================================================
-// Populated Libiraries
-// =============================================================================
-
 //line example.com/lib/lib.go:10
 func Fact(n int) int {
 	return int(C.fact(C.longlong(n)))
 }
 
-//line example.com/lib/lib.go:14
 func Pi() float64 {
 	return float64(C.pi())
 }
-
-// =============================================================================
-// Original Main Package
-// =============================================================================
 
 //line main.go:9
 func main() {

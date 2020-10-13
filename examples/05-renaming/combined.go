@@ -10,17 +10,14 @@ import (
 //line example.com/lib/lib.go:9
 const lib_Pi = math.Pi
 
-//line example.com/lib/lib.go:11
 const (
 	lib_ConstA = 1 << iota
 	lib_ConstB
 	lib_ConstC
 )
 
-//line example.com/lib/lib.go:17
 var lib_VarX = "This is lib.VarX"
 
-//line example.com/lib/lib.go:19
 const lib_Y = 123
 
 //line example.com/lib/lib.go:35
@@ -34,7 +31,6 @@ func lib_Abs(a int) int {
 //line example.com/lib/lib.go:60
 type lib_T float64
 
-//line example.com/lib/lib.go:62
 func (t lib_T) Prn(w io.Writer) {
 	fmt.Fprintln(w, t)
 }
@@ -42,16 +38,12 @@ func (t lib_T) Prn(w io.Writer) {
 //line main.go:11
 const Pi = 3.14
 
-//line main.go:13
 const ConstB = "This is main.ConstB"
 
-//line main.go:15
 var VarX = "This is main.VarX"
 
-//line main.go:17
 var Y = "This is main.Y"
 
-//line main.go:19
 func Abs(a int) int {
 	if a < 0 {
 		return -a
@@ -59,38 +51,36 @@ func Abs(a int) int {
 	return a
 }
 
-//line main.go:26
 type T int
 
-//line main.go:28
 func (t T) Prn(w io.Writer) {
 	fmt.Fprintln(w, t)
 }
 
-//line main.go:32
 func main() {
+	// names of the function, consts, vars in lib will be renamed.
 
-//line main.go:36
+	// const
 	fmt.Println(Pi)
 	fmt.Println(lib_Pi)
 
-//line main.go:40
+	// const
 	fmt.Println(ConstB)
 	fmt.Println(lib_ConstB)
 
-//line main.go:44
+	// var
 	fmt.Println(VarX)
 	fmt.Println(lib_VarX)
 
-//line main.go:48
+	// const and var
 	fmt.Println(Y)
 	fmt.Println(lib_Y)
 
-//line main.go:52
+	// function
 	fmt.Println(Abs(-2))
 	fmt.Println(lib_Abs(-1))
 
-//line main.go:56
+	// type
 	mainT := T(10)
 	libT := lib_T(20)
 

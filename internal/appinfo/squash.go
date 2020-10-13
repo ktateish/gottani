@@ -11,7 +11,9 @@ import (
 	"go/token"
 	"io"
 	"io/ioutil"
+	"math"
 	"path/filepath"
+
 	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
@@ -42,6 +44,9 @@ type SquashedApp struct {
 	importDecls []ast.Decl
 	decls       []ast.Decl
 
+	// comments for decls
+	comments map[ast.Decl][]*ast.CommentGroup
+
 	// Fset keeps FileSet for the Syntax
 	fset *token.FileSet
 }
@@ -49,7 +54,9 @@ type SquashedApp struct {
 // newSquashedApp build SquashedApp from appInfo
 func newSquashedApp(ai appInfo) (*SquashedApp, error) {
 	// collect used items for the SquashedApp
-	ingr := &ingredients{}
+	ingr := &ingredients{
+		comments: make(map[ast.Decl][]*ast.CommentGroup),
+	}
 	fset := ai.FileSet()
 
 	for _, bp := range ai.Packages() {
@@ -68,7 +75,9 @@ func newSquashedApp(ai appInfo) (*SquashedApp, error) {
 	}
 
 	forEachFile(ai, func(bp *build.Package, f *ast.File) {
+		var cidx int
 		for _, decl := range f.Decls {
+			var adding ast.Decl
 			switch decl := decl.(type) {
 			case *ast.GenDecl:
 				switch decl.Tok {
@@ -79,15 +88,15 @@ func newSquashedApp(ai appInfo) (*SquashedApp, error) {
 					ingr.importCSpecs = append(ingr.importCSpecs, cspecs...)
 				case token.CONST:
 					if hasUsedValueSpec(ai, decl.Specs) {
-						ingr.decls = append(ingr.decls, decl)
+						adding = decl
 					}
 				case token.TYPE:
 					if hasUsedTypeSpec(ai, decl) {
-						ingr.decls = append(ingr.decls, decl)
+						adding = decl
 					}
 				case token.VAR:
 					if hasUsedValueSpec(ai, decl.Specs) {
-						ingr.decls = append(ingr.decls, decl)
+						adding = decl
 					}
 				}
 			case *ast.FuncDecl:
@@ -95,7 +104,18 @@ func newSquashedApp(ai appInfo) (*SquashedApp, error) {
 				if !ai.IsUsed(id) {
 					break
 				}
-				ingr.decls = append(ingr.decls, decl)
+				adding = decl
+			}
+			if adding != nil {
+				ingr.decls = append(ingr.decls, adding)
+				for ; cidx < len(f.Comments) && f.Comments[cidx].Pos() < adding.Pos(); cidx++ {
+					// skip previous comments
+				}
+				var cgs []*ast.CommentGroup
+				for ; cidx < len(f.Comments) && f.Comments[cidx].End() <= adding.End(); cidx++ {
+					cgs = append(cgs, f.Comments[cidx])
+				}
+				ingr.comments[adding] = cgs
 			}
 		}
 	})
@@ -107,7 +127,7 @@ func newSquashedApp(ai appInfo) (*SquashedApp, error) {
 // Fprint formats the source code and writes it to the given io.Writer
 func (sa *SquashedApp) Fprint(w io.Writer) error {
 	buf := new(bytes.Buffer)
-	fmt.Fprintf(buf, "package %s\n\n", sa.pkgName)
+	fmt.Fprintf(buf, "package %s", sa.pkgName)
 	pcfg := printer.Config{
 		Mode:     printer.TabIndent | printer.UseSpaces,
 		Tabwidth: 8,
@@ -115,17 +135,60 @@ func (sa *SquashedApp) Fprint(w io.Writer) error {
 	}
 
 	for _, decl := range sa.importDecls {
-		pcfg.Fprint(buf, sa.fset, decl)
 		fmt.Fprintf(buf, "\n\n")
+		pcfg.Fprint(buf, sa.fset, decl)
 	}
 
-	// The printer.SourcePos should be used but some Cgo comments got borken by them.
-	// So don't print source pos during import Decls.
-	pcfg.Mode |= printer.SourcePos
+	lines := func(nd ast.Decl) (int, int) {
+		var doc *ast.CommentGroup
+		switch nd := nd.(type) {
+		case *ast.GenDecl:
+			doc = nd.Doc
+		case *ast.FuncDecl:
+			doc = nd.Doc
+		}
+		var start int
+		if doc != nil {
+			start = sa.fset.Position(doc.Pos()).Line
+		} else {
+			start = sa.fset.Position(nd.Pos()).Line
+		}
+		return start, sa.fset.Position(nd.End()).Line
+	}
+	base := func(nd ast.Node) int {
+		return sa.fset.File(nd.Pos()).Base()
+	}
+	newlines := func(i int) int {
+		if i == 0 || base(sa.decls[i-1]) != base(sa.decls[i]) {
+			return math.MaxInt32
+		}
+		_, lastEnd := lines(sa.decls[i-1])
+		thisStart, _ := lines(sa.decls[i])
+		return thisStart - lastEnd
+	}
+	min := func(a, b int) int {
+		if a < b {
+			return a
+		}
+		return b
+	}
 
-	for _, d := range sa.decls {
-		pcfg.Fprint(buf, sa.fset, d)
-		fmt.Fprintf(buf, "\n\n")
+	for i, d := range sa.decls {
+		nls := newlines(i)
+		for j := 0; j < min(nls, 2); j++ {
+			fmt.Fprintf(buf, "\n")
+		}
+		if nls <= 2 {
+			pcfg.Mode &^= printer.SourcePos
+		} else {
+			pcfg.Mode |= printer.SourcePos
+		}
+		cnd := &printer.CommentedNode{
+			Node:     d,
+			Comments: sa.comments[d],
+		}
+
+		pcfg.Fprint(buf, sa.fset, cnd)
 	}
 
 	b, err := format.Source(buf.Bytes())
@@ -143,6 +206,8 @@ type ingredients struct {
 	importSpecs  []*ast.ImportSpec // For normal ImportSpecs. they can be packed into a single import ( ... ) notation
 
 	decls []ast.Decl // for used GenDecls/FuncDecls
+
+	comments map[ast.Decl][]*ast.CommentGroup // for comments in GenDecls/FuncDecls
 }
 
 func (ingr *ingredients) squashImports(ai appInfo, used map[string]bool) []ast.Decl {
@@ -243,6 +308,7 @@ func (ingr *ingredients) newSquashedApp(ai appInfo) *SquashedApp {
 	}
 
 	res.decls = removeInvalidSelector(ingr.decls)
+	res.comments = ingr.comments
 
 	return res
 }

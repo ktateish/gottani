@@ -14,7 +14,6 @@ func egcd(a, b int) (int, int, int) {
 	return d, y, x - a/b*y
 }
 
-//line lib.go:35
 func gcd(a, b int) int {
 	d, _, _ := egcd(a, b)
 	return d

@@ -29,7 +29,6 @@ func Fact(n int) int {
 	return int(C.fact(C.longlong(n)))
 }
 
-//line example.com/lib/lib.go:14
 func Pi() float64 {
 	return float64(C.pi())
 }

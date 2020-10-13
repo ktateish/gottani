@@ -185,7 +185,7 @@ func (ingr *ingredients) squashRest(ai appInfo, used map[string]bool, filter fun
 		if !filter(d) {
 			continue
 		}
-		renameConstVarDecl(ai, used, d)
+		renameGenDecl(ai, used, d)
 		res = append(res, d)
 	}
 
@@ -193,7 +193,7 @@ func (ingr *ingredients) squashRest(ai appInfo, used map[string]bool, filter fun
 		if !filter(d) {
 			continue
 		}
-		renameTypeDecl(ai, used, d)
+		renameGenDecl(ai, used, d)
 		res = append(res, d)
 	}
 
@@ -201,7 +201,7 @@ func (ingr *ingredients) squashRest(ai appInfo, used map[string]bool, filter fun
 		if !filter(d) {
 			continue
 		}
-		renameConstVarDecl(ai, used, d)
+		renameGenDecl(ai, used, d)
 		res = append(res, d)
 	}
 
@@ -350,15 +350,24 @@ func renameFuncDecl(ai appInfo, used map[string]bool, decl *ast.FuncDecl) {
 	renameIdents(ai, used, prefix, []*ast.Ident{decl.Name})
 }
 
-// rename type name if needed.
-func renameTypeDecl(ai appInfo, used map[string]bool, decl *ast.GenDecl) {
+// rename type, const, var name if needed.
+// It scans all specs in the decl and rename all ident when one of them need
+// renaming.  It is done for readability.
+func renameGenDecl(ai appInfo, used map[string]bool, decl *ast.GenDecl) {
 	var ids []*ast.Ident
 	var needRename bool
 	for _, spec := range decl.Specs {
-		spec := spec.(*ast.TypeSpec)
-		id := spec.Name
-		ids = append(ids, id)
-		needRename = needRename || used[id.Name]
+		switch spec := spec.(type) {
+		case *ast.TypeSpec:
+			id := spec.Name
+			ids = append(ids, id)
+			needRename = needRename || used[id.Name]
+		case *ast.ValueSpec:
+			for _, id := range spec.Names {
+				ids = append(ids, id)
+				needRename = needRename || used[id.Name]
+			}
+		}
 	}
 
 	if needRename {
@@ -395,30 +404,6 @@ func renameIdents(ai appInfo, used map[string]bool, prefix string, ids []*ast.Id
 		id.Name = tns[i]
 		renameTo(ai, id, tns[i])
 		used[tns[i]] = true
-	}
-}
-
-// rename const name.  It scans all specs in the decl and rename all ident when
-// one of them need renaming.  It is done for readability.
-func renameConstVarDecl(ai appInfo, used map[string]bool, decl *ast.GenDecl) {
-	var ids []*ast.Ident
-	var needRename bool
-	for _, spec := range decl.Specs {
-		spec := spec.(*ast.ValueSpec)
-		for _, id := range spec.Names {
-			ids = append(ids, id)
-			needRename = needRename || used[id.Name]
-		}
-	}
-
-	if needRename {
-		bp := ai.GetPackage(decl)
-		prefix := bp.Name
-		renameIdents(ai, used, prefix, ids)
-	} else {
-		for _, id := range ids {
-			used[id.Name] = true
-		}
 	}
 }
 

@@ -74,7 +74,10 @@ func newSquashedApp(ai appInfo) (*SquashedApp, error) {
 			case *ast.GenDecl:
 				switch decl.Tok {
 				case token.IMPORT:
-					collectUsedImport(ai, ingr, decl)
+					specs, cdecls, cspecs := collectUsedImport(ai, decl)
+					ingr.importSpecs = append(ingr.importSpecs, specs...)
+					ingr.importCDecls = append(ingr.importCDecls, cdecls...)
+					ingr.importCSpecs = append(ingr.importCSpecs, cspecs...)
 				case token.CONST:
 					collectUsedConst(ai, ingr, decl)
 				case token.TYPE:
@@ -582,7 +585,7 @@ func collectUsedImportC(ai appInfo, ingr *ingredients, decl *ast.GenDecl) {
 	}
 }
 
-func collectUsedImport(ai appInfo, ingr *ingredients, decl *ast.GenDecl) {
+func collectUsedImport(ai appInfo, decl *ast.GenDecl) (specs []*ast.ImportSpec, cdecls []*ast.GenDecl, cspecs []*ast.ImportSpec) {
 	for _, spec := range decl.Specs {
 		spec, ok := spec.(*ast.ImportSpec)
 		if !ok {
@@ -604,14 +607,15 @@ func collectUsedImport(ai appInfo, ingr *ingredients, decl *ast.GenDecl) {
 		}
 		if spec.Path.Value == `"C"` {
 			if len(decl.Specs) == 1 {
-				ingr.importCDecls = append(ingr.importCDecls, decl)
+				cdecls = append(cdecls, decl)
 			} else {
-				ingr.importCSpecs = append(ingr.importCSpecs, spec)
+				cspecs = append(cspecs, spec)
 			}
 			continue
 		}
-		ingr.importSpecs = append(ingr.importSpecs, spec)
+		specs = append(specs, spec)
 	}
+	return
 }
 
 func collectUsedVar(ai appInfo, ingr *ingredients, decl *ast.GenDecl) {

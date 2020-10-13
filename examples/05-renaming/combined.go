@@ -11,6 +11,9 @@ import (
 // Populated Libiraries
 // =============================================================================
 
+//line example.com/lib/lib.go:9
+const lib_Pi = math.Pi
+
 //line example.com/lib/lib.go:11
 const (
 	lib_ConstA = 1 << iota
@@ -18,15 +21,8 @@ const (
 	lib_ConstC
 )
 
-const (
-//line example.com/lib/lib.go:9
-	lib_Pi = math.Pi
-
 //line example.com/lib/lib.go:19
-	lib_Y = 123
-
-//line example.com/lib/lib.go:19
-)
+const lib_Y = 123
 
 type lib_T float64
 
@@ -49,14 +45,11 @@ func lib_Abs(a int) int {
 // Original Main Package
 // =============================================================================
 
-const (
 //line main.go:11
-	Pi = 3.14
-
-	ConstB = "This is main.ConstB"
+const Pi = 3.14
 
 //line main.go:13
-)
+const ConstB = "This is main.ConstB"
 
 type T int
 

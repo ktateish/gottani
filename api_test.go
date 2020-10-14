@@ -25,8 +25,7 @@ func TestCombine(t *testing.T) {
 		"examples/08-cgo",
 
 		// testdata
-		// "testdata/0001-...",
-		// "testdata/0002-...",
+		"testdata/issue2",
 	}
 	cwd, err := os.Getwd()
 	if err != nil {

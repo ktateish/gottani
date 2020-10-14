@@ -307,7 +307,6 @@ func (ingr *ingredients) newSquashedApp(ai appInfo) *SquashedApp {
 			}
 		}
 	}
-
 	res.decls = removeInvalidSelector(ingr.decls)
 	res.comments = ingr.comments
 
@@ -324,7 +323,7 @@ func removeInvalidSelector(decls []ast.Decl) []ast.Decl {
 			if id, ok := sel.X.(*ast.Ident); ok && id.Name == "" {
 				c.Replace(sel.Sel)
 			}
-			return false
+			return true
 		}
 		return true
 	}

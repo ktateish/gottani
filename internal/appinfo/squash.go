@@ -404,7 +404,7 @@ func renameIdents(ai appInfo, used map[string]bool, prefix string, ids []*ast.Id
 
 	for i, id := range ids {
 		id.Name = tns[i]
-		renameTo(ai, id, tns[i])
+		renameRefererOfIdent(ai, id, tns[i])
 		used[tns[i]] = true
 	}
 }
@@ -516,13 +516,8 @@ func squashImportSpecs(ai appInfo, used map[string]bool, specs []*ast.ImportSpec
 
 		// non-standard packages will be embedded into the target source file
 		if !bp.Goroot {
-			// *ast.SelectorExpr using this empty name will be replaced by its .Sel.
-			if spec.Name != nil {
-				// ai.GetReferrings keeps referring identities for spec.Name if it isn't nil
-				renameTo(ai, spec.Name, "")
-			} else {
-				renameTo(ai, spec, "")
-			}
+			// *ast.SelectorExpr using this empty name will be replaced by its .Sel. later
+			renameRefererOfImportSpec(ai, spec, "")
 			continue
 		}
 
@@ -563,15 +558,29 @@ func squashImportSpecs(ai appInfo, used map[string]bool, specs []*ast.ImportSpec
 		res = append(res, spec)
 
 		for _, sp := range sames {
-			renameTo(ai, sp, name)
+			renameRefererOfImportSpec(ai, sp, name)
 		}
 	}
 	return res
 }
 
-// rename the name of identities referring the given node.
-func renameTo(ai appInfo, node ast.Node, to string) {
-	for _, uid := range ai.GetReferrings(node) {
+// rename the name of identities referring the given spec.
+func renameRefererOfImportSpec(ai appInfo, spec *ast.ImportSpec, to string) {
+	if spec.Name != nil {
+		renameRefererOfIdent(ai, spec.Name, to)
+		return
+	}
+	for _, uid := range ai.GetReferrings(spec) {
+		if uid.Name == to {
+			continue
+		}
+		uid.Name = to
+	}
+}
+
+// rename the name of identities referring the given id.
+func renameRefererOfIdent(ai appInfo, id *ast.Ident, to string) {
+	for _, uid := range ai.GetReferrings(id) {
 		if uid.Name == to {
 			continue
 		}

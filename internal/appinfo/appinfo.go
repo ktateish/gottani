@@ -108,6 +108,10 @@ func (ai *ApplicationInfo) IsUsed(nd ast.Node) bool {
 			for _, id := range ids {
 				rec(id)
 			}
+			ast.Inspect(nd, func(nd ast.Node) bool {
+				rec(nd)
+				return true
+			})
 		default:
 			ast.Inspect(nd, func(nd ast.Node) bool {
 				rec(nd)

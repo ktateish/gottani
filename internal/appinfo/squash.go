@@ -544,6 +544,10 @@ func squashImportSpecs(ai appInfo, used map[string]bool, specs []*ast.ImportSpec
 		}
 		used[name] = true
 
+		for _, sp := range sames {
+			renameRefererOfImportSpec(ai, sp, name)
+		}
+
 		if spec.Name == nil {
 			obj := ai.TypesInfo().Implicits[spec]
 			if obj.Name() != name {
@@ -553,13 +557,13 @@ func squashImportSpecs(ai appInfo, used map[string]bool, specs []*ast.ImportSpec
 				}
 			}
 		} else if spec.Name.Name != name {
-			spec.Name.Name = name
+			if bp.Name == name {
+				spec.Name = nil
+			} else {
+				spec.Name.Name = name
+			}
 		}
 		res = append(res, spec)
-
-		for _, sp := range sames {
-			renameRefererOfImportSpec(ai, sp, name)
-		}
 	}
 	return res
 }

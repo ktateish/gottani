@@ -14,7 +14,7 @@ import (
 func Combine(dir, entryPointName string) ([]byte, error) {
 	pi, err := pkginfo.New(dir)
 	if err != nil {
-		return nil, fmt.Errorf("laoding package information: %w", err)
+		return nil, fmt.Errorf("loading package information: %w", err)
 	}
 
 	ai := appinfo.NewApplicationInfo(pi, entryPointName)

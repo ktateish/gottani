@@ -5,8 +5,14 @@ import "fmt"
 
 //line example.com/lib/lib.go:24
 // Egcd(a, b) returns d, x, y:
-//   d is Gcd(a,b)
-//   x, y are  integers that satisfy ax + by = d
+//
+//	d is Gcd(a,b)
+//	x, y are  integers that satisfy ax + by = d
+//
+//line example.com/lib/lib.go:24
+//line example.com/lib/lib.go:24
+//line example.com/lib/lib.go:24
+//line example.com/lib/lib.go:27
 func Egcd(a, b int) (int, int, int) {
 	if b == 0 {
 		return a, 1, 0

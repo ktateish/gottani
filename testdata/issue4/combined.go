@@ -6,8 +6,9 @@ import (
 	"math"
 )
 
-//line example.com/lib/lib.go:5
 // F() returns the value of Pi
+//
+//line example.com/lib/lib.go:5
 func F() float64 {
 	return math.Pi
 }

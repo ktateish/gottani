@@ -1,6 +1,6 @@
 module example.com/05-thirdparty
 
-go 1.14
+go 1.23
 
 replace example.com/lib => ./lib
 

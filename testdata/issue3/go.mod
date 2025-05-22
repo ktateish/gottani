@@ -1,6 +1,6 @@
 module github.com/ktateish/gottani/testdata/issue3
 
-go 1.14
+go 1.23
 
 replace (
 	example.com/libx => ./libx

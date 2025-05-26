@@ -6,14 +6,16 @@ import (
 	"math"
 )
 
-//line example.com/libx/libx.go:5
 // F() returns the value of Pi
+//
+//line example.com/libx/libx.go:5
 func F() float64 {
 	return math.Pi
 }
 
-//line example.com/liby/liby.go:5
 // F() returns the value of Pi
+//
+//line example.com/liby/liby.go:5
 func liby_F() float64 {
 	return math.Pi
 }

@@ -3,8 +3,9 @@ package main
 
 import "fmt"
 
-//line example.com/lib/lib.go:3
 // DEAFULT is the default T
+//
+//line example.com/lib/lib.go:3
 var DEFAULT *T
 
 //line example.com/lib/lib.go:11

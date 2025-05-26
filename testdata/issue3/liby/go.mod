@@ -1,3 +1,3 @@
 module example.com/liby
 
-go 1.14
+go 1.23

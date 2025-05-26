@@ -13,6 +13,7 @@ import (
 	"io/ioutil"
 	"math"
 	"path/filepath"
+	"slices"
 
 	"strings"
 
@@ -304,6 +305,9 @@ func (ingr *ingredients) newSquashedApp(ai appInfo) *SquashedApp {
 				renameGenDecl(ai, used, d)
 			case *ast.FuncDecl:
 				renameFuncDecl(ai, used, d)
+				if d.Body == nil {
+					fixupExternFuncDecl(ai.GetPackage(d).Name, d)
+				}
 			}
 		}
 	}
@@ -311,6 +315,50 @@ func (ingr *ingredients) newSquashedApp(ai appInfo) *SquashedApp {
 	res.comments = ingr.comments
 
 	return res
+}
+
+// fixupExternFuncDecl adds stub body for extern functions, typically
+// implemented in assembly languages.
+// The stub body jsut panics with a message that explains an extern function is
+// not supported.
+// It also removes compiler directives for extern functions.
+//
+// Example:
+//
+//     extern function like:
+//
+//     //go:noescape
+//     func Add(a, b int) int
+//
+//     turns to:
+//
+//     func Add(a, b int) int { panic("gottani: extern asm is not supported: lib.Add") }
+//
+func fixupExternFuncDecl(pkgName string, fn *ast.FuncDecl) {
+	// Remove compiler directives applicable only for FuncDecl without Body.
+	// They cause errors when the FuncDecl has Body.
+	fn.Doc.List = slices.DeleteFunc(fn.Doc.List, func(c *ast.Comment) bool {
+		for _, dir := range []string{"noescape", "wasmimport", "linkname"} {
+			if (strings.HasPrefix(c.Text, "//go:" + dir)) {
+				return true
+			}
+		}
+		return false
+	})
+
+	// Add sutb Body to panic when it is called.
+	msg := &ast.BasicLit{
+		Kind: token.STRING,
+		Value: fmt.Sprintf(`"gottani: extern function is not supported: %s.%s"`, pkgName, fn.Name.Name),
+	}
+	panicCall := &ast.ExprStmt{
+		X: &ast.CallExpr{
+			Fun:  ast.NewIdent("panic"),
+			Args: []ast.Expr{msg},
+		},
+	}
+	stmts := []ast.Stmt{panicCall}
+	fn.Body = &ast.BlockStmt{ List: stmts}
 }
 
 // *ast.SelectorExpr `lib.Foo()` in the original source is renamed to invalid `.Foo()`

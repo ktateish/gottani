@@ -33,3 +33,42 @@ to stdout.
 ```
 
 See also the `examples` directory.
+
+
+## Note
+
+### Handling of assembly-backed (“extern”) functions
+
+Gottani now rewrites any Go function declaration that has no body
+-i.e. a Go prototype whose real implementation lives in an .s file-
+into a tiny panic stub so the flattened file always builds and links:
+
+```
+// before flattening
+//go:noescape
+func Add(a, b int) int
+
+// after flattening by gottani
+func Add(a, b int) int { panic("gottani: extern asm is not supported: lib.Add") }
+```
+
+#### What this means in practice
+
+| Case    | Result                                                 |
+|---------|--------------------------------------------------------|
+| build   | Suceeds (the auto-generated stub prevents link errors) |
+| runtime | Panics the moment an extern function is invoked        |
+
+The stub does not replicate the original assembly routine; it only keeps
+the linker happy.
+
+#### How to stay safe
+
+1. Verify the flattened output once with go run or go test.
+    * If your program never touches the extern symbol, nothing changes.
+2. Need the real assembly?
+    * Keep that package as a normal import instead of flattening it, or
+    * Vendor the relevant .s file alongside the generated code.
+
+The panic message includes the fully-qualified symbol name (lib.Add above)
+so you can quickly locate and refactor any accidental calls.

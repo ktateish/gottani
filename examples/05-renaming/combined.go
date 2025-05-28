@@ -29,7 +29,7 @@ func lib_Abs(a int) int {
 	return a
 }
 
-//line example.com/lib/lib.go:60
+//line example.com/lib/lib.go:61
 type lib_T float64
 
 func (t lib_T) Prn(w io.Writer) {

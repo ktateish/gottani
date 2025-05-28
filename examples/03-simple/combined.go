@@ -12,7 +12,7 @@ import "fmt"
 //line lib.go:24
 //line lib.go:24
 //line lib.go:24
-//line lib.go:27
+//line lib.go:28
 func egcd(a, b int) (int, int, int) {
 	if b == 0 {
 		return a, 1, 0

@@ -166,7 +166,7 @@ func (sa *SquashedApp) Fprint(w io.Writer) error {
 		}
 		_, lastEnd := lines(sa.decls[i-1])
 		thisStart, _ := lines(sa.decls[i])
-		return max(1, thisStart - lastEnd)
+		return max(1, thisStart-lastEnd)
 	}
 	min := func(a, b int) int {
 		if a < b {
@@ -319,27 +319,26 @@ func (ingr *ingredients) newSquashedApp(ai appInfo) *SquashedApp {
 
 // fixupExternFuncDecl adds stub body for extern functions, typically
 // implemented in assembly languages.
-// The stub body jsut panics with a message that explains an extern function is
+// The stub body just panics with a message that explains an extern function is
 // not supported.
 // It also removes compiler directives for extern functions.
 //
 // Example:
 //
-//     extern function like:
+//	extern function like:
 //
-//     //go:noescape
-//     func Add(a, b int) int
+//	//go:noescape
+//	func Add(a, b int) int
 //
-//     turns to:
+//	turns to:
 //
-//     func Add(a, b int) int { panic("gottani: extern asm is not supported: lib.Add") }
-//
+//	func Add(a, b int) int { panic("gottani: extern asm is not supported: lib.Add") }
 func fixupExternFuncDecl(pkgName string, fn *ast.FuncDecl) {
 	// Remove compiler directives applicable only for FuncDecl without Body.
 	// They cause errors when the FuncDecl has Body.
 	fn.Doc.List = slices.DeleteFunc(fn.Doc.List, func(c *ast.Comment) bool {
 		for _, dir := range []string{"noescape", "wasmimport", "linkname"} {
-			if (strings.HasPrefix(c.Text, "//go:" + dir)) {
+			if strings.HasPrefix(c.Text, "//go:"+dir) {
 				return true
 			}
 		}
@@ -348,7 +347,7 @@ func fixupExternFuncDecl(pkgName string, fn *ast.FuncDecl) {
 
 	// Add sutb Body to panic when it is called.
 	msg := &ast.BasicLit{
-		Kind: token.STRING,
+		Kind:  token.STRING,
 		Value: fmt.Sprintf(`"gottani: extern function is not supported: %s.%s"`, pkgName, fn.Name.Name),
 	}
 	panicCall := &ast.ExprStmt{
@@ -358,7 +357,7 @@ func fixupExternFuncDecl(pkgName string, fn *ast.FuncDecl) {
 		},
 	}
 	stmts := []ast.Stmt{panicCall}
-	fn.Body = &ast.BlockStmt{ List: stmts}
+	fn.Body = &ast.BlockStmt{List: stmts}
 }
 
 // *ast.SelectorExpr `lib.Foo()` in the original source is renamed to invalid `.Foo()`

@@ -40,8 +40,9 @@ func Abs(a int) int {
 }
 
 // Egcd(a, b) returns d, x, y:
-//   d is Gcd(a,b)
-//   x, y are  integers that satisfy ax + by = d
+//
+//	d is Gcd(a,b)
+//	x, y are  integers that satisfy ax + by = d
 func Egcd(a, b int) (int, int, int) {
 	if b == 0 {
 		return a, 1, 0

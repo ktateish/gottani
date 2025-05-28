@@ -166,7 +166,7 @@ func (sa *SquashedApp) Fprint(w io.Writer) error {
 		}
 		_, lastEnd := lines(sa.decls[i-1])
 		thisStart, _ := lines(sa.decls[i])
-		return thisStart - lastEnd
+		return max(1, thisStart - lastEnd)
 	}
 	min := func(a, b int) int {
 		if a < b {

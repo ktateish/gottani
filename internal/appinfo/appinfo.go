@@ -325,7 +325,7 @@ func (ai *ApplicationInfo) GetMethods(id *ast.Ident) []*ast.Ident {
 						if robj == nil {
 							return false
 						}
-						isObjsMethod = obj == robj
+						isObjsMethod = isObjsMethod || obj == robj
 						return false
 					})
 					if !isObjsMethod {
